@@ -1,0 +1,10 @@
+[user]
+    name = Steven Wilkens
+    email = stevencwilkens@gmail.com
+
+[core]
+    sshCommand = "ssh -i ~/.ssh/id_ed25519_personal"
+
+# Automatically convert standard URLs to the personal alias
+[url "git@github.com-personal:"]
+    insteadOf = "git@github.com:"

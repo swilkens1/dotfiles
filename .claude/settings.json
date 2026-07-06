@@ -1,0 +1,26 @@
+{
+  "effortLevel": "high",
+  "cleanupPeriodDays": 90,
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/archive-session.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/check-archive-size.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

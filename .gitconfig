@@ -1,0 +1,29 @@
+[user]
+	name = Steven Wilkens
+	email = stevencwilkens@gmail.com
+
+[core]
+    autocrlf = false
+    eol = lf
+	editor = vim
+
+[init]
+	defaultBranch = master
+
+[http]
+    sslVerify = true
+
+[includeIf "gitdir/i:~/personal/**/"]
+    path = ~/.gitconfig-personal
+
+[includeIf "gitdir/i:~/work/**/"]
+    path = ~/.gitconfig-work
+
+[credential]
+    useHttpPath = true
+    helper = manager
+
+[credential "https://git-codecommit.*.amazonaws.com"]
+    helper = 
+    helper = !aws codecommit credential-helper $@
+    useHttpPath = true
