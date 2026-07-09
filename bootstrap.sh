@@ -2,13 +2,14 @@
 #
 # Bootstrap dotfiles on a fresh machine.
 #
-# One-liner:
-#   Windows: install MSYS2 first (winget install MSYS2.MSYS2), launch the
-#     UCRT64 shell, then:
-#     curl -fsSL https://raw.githubusercontent.com/swilkens1/dotfiles/master/bootstrap.sh | bash
-#   Linux/macOS: same curl one-liner from any bash-capable shell.
-# Or after cloning:
-#   bash ~/bootstrap.sh
+# One-liner (Windows: launch UCRT64 shell first, from `winget install MSYS2.MSYS2`):
+#   curl -fsSL https://raw.githubusercontent.com/swilkens1/dotfiles/master/bootstrap.sh -o ~/bootstrap.sh \
+#     && bash ~/bootstrap.sh
+#
+# Do NOT run via `curl ... | bash`. Several child processes spawned below
+# (cmd.exe for mklink, winget, vim) inherit the piped stdin and consume
+# the rest of the script as if it were their own input. Materialize to
+# disk first, then bash it.
 #
 set -euo pipefail
 
@@ -28,6 +29,13 @@ config() { git --git-dir="$CFG" --work-tree="$HOME" "$@"; }
 # same physical files. mklink /J creates NTFS junctions — no Admin or
 # Developer Mode required, directories only. Idempotent; skips with a
 # warning if $link already exists as a real directory.
+#
+# Removing a junction without nuking the target (bash's `rm -rf` FOLLOWS
+# junctions and wipes the target's contents — do not use it):
+#   cmd //c rmdir "$(cygpath -w ~/.aws)"                    # from bash
+#   [System.IO.Directory]::Delete('C:\path\to\junction')    # from PowerShell
+# (PS's `Remove-Item` has historically followed junctions in 5.1; use
+# Directory.Delete to be safe.)
 link_dir_win() {
   case "$OSTYPE" in
     msys*|cygwin*) ;;
@@ -46,7 +54,11 @@ link_dir_win() {
   link_w=$(cygpath -w "$link")
   target_w=$(cygpath -w "$target")
   echo "Junction: $link  ->  $target"
-  MSYS2_ARG_CONV_EXCL='*' cmd //c "mklink /J \"$link_w\" \"$target_w\"" >/dev/null
+  # PowerShell's New-Item -ItemType Junction, not `cmd //c mklink /J`:
+  # MSYS2's arg-to-CommandLine conversion mangles the quoted mklink
+  # string enough that cmd rejects it with "syntax is incorrect".
+  powershell.exe -NoProfile -Command \
+    "New-Item -ItemType Junction -Path '$link_w' -Target '$target_w' | Out-Null"
 }
 
 # Ensure git is on PATH before we try to clone the bare repo. On fresh
@@ -312,7 +324,16 @@ fi
 
 cat <<'EOF'
 
-Bootstrap complete. Manual next steps:
+Bootstrap complete.
+
+Windows note — removing a home-dir junction (~/.aws, ~/.kube, etc.):
+  bash's `rm -rf` FOLLOWS junctions and deletes the target's contents.
+  To remove the junction only (target untouched):
+    cmd //c rmdir "$(cygpath -w ~/.aws)"                    # from bash
+    [System.IO.Directory]::Delete('C:\Users\you\.aws')      # from PowerShell
+  Do NOT use `rm -rf`, `rmdir -r`, or PS `Remove-Item` on these paths.
+
+Manual next steps:
 
   1. Windows only: verify MSYS2_PATH_TYPE=strict in C:\msys64\msys2.ini,
      then restart the shell. PATH should be short (only whitelisted entries).
