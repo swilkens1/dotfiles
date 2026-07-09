@@ -174,9 +174,9 @@ cat > "$CFG/info/exclude" <<'EOF'
 # Documents files that must never be `config add -f`'d.
 .aws/config
 .aws/credentials
-.aws/corp-ca.cer
 .aws/sso
 .aws/cli/cache
+.local/share/corp-ca.cer
 .claude/auth.conf
 .claude/settings.local.json
 .claude.json

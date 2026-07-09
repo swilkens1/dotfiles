@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 # Corporate CA bundle. Set CORP_CA_BUNDLE in a local-only ~/.bashrc.d/9*.sh
-# to point at your machine's cert, OR drop the cert at ~/.aws/corp-ca.cer
-# and this picks it up automatically. Guarded so a machine without a corp
-# CA doesn't export a bogus path that would error every aws call.
-CORP_CA_BUNDLE="${CORP_CA_BUNDLE:-$HOME/.aws/corp-ca.cer}"
+# to point at your machine's cert, OR drop the cert at the default location
+# and this picks it up automatically. Extract with ~/extract-corp-ca.sh
+# (works from Git Bash or MSYS2). Guarded so a machine without a corp CA
+# doesn't export a bogus path that would error every aws call.
+CORP_CA_BUNDLE="${CORP_CA_BUNDLE:-$HOME/.local/share/corp-ca.cer}"
 if [ -f "$CORP_CA_BUNDLE" ]; then
   export AWS_CA_BUNDLE="$CORP_CA_BUNDLE"
 fi
