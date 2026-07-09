@@ -1,5 +1,4 @@
 {
-  "effortLevel": "high",
   "cleanupPeriodDays": 90,
   "hooks": {
     "SessionEnd": [
@@ -22,5 +21,6 @@
         ]
       }
     ]
-  }
+  },
+  "effortLevel": "xhigh"
 }
