@@ -46,18 +46,62 @@ link_dir_win() {
   link_w=$(cygpath -w "$link")
   target_w=$(cygpath -w "$target")
   echo "Junction: $link  ->  $target"
-  cmd //c "mklink /J \"$link_w\" \"$target_w\"" >/dev/null
+  MSYS2_ARG_CONV_EXCL='*' cmd //c "mklink /J \"$link_w\" \"$target_w\"" >/dev/null
+}
+
+# Ensure git is on PATH before we try to clone the bare repo. On fresh
+# Windows/MSYS2, Git for Windows may not yet be visible even if installed
+# (per-user installs under AppData don't always land in MSYS2's inherited
+# PATH). Fixes the chicken-and-egg where install_windows_native_tools
+# would install Git.Git but only in step 8, AFTER the clone in step 1.
+ensure_git_available() {
+  if command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+
+  case "$OSTYPE" in
+    msys*|cygwin*)
+      # Check common Git for Windows install locations.
+      local candidates=(
+        "/c/Program Files/Git/cmd"
+        "/c/Users/$USERNAME/AppData/Local/Programs/Git/cmd"
+      )
+      local found=""
+      for dir in "${candidates[@]}"; do
+        [ -x "$dir/git.exe" ] && { found="$dir"; break; }
+      done
+
+      # Not on disk — try winget install.
+      if [ -z "$found" ] && command -v winget.exe >/dev/null 2>&1; then
+        echo "git not found — installing Git for Windows via winget (~30s)"
+        winget install --id Git.Git \
+          --accept-source-agreements --accept-package-agreements --silent \
+          || echo "  (winget install failed — install manually from https://gitforwindows.org)"
+        for dir in "${candidates[@]}"; do
+          [ -x "$dir/git.exe" ] && { found="$dir"; break; }
+        done
+      fi
+
+      if [ -z "$found" ]; then
+        echo "FATAL: git not found after install attempts." >&2
+        echo "       Install Git for Windows from https://gitforwindows.org," >&2
+        echo "       then re-run bootstrap." >&2
+        exit 1
+      fi
+
+      echo "Using Git for Windows at $found"
+      export PATH="$found:$PATH"
+      ;;
+    *)
+      echo "FATAL: git not found. Install it (apt install git / brew install git / etc.)," >&2
+      echo "       then re-run bootstrap." >&2
+      exit 1
+      ;;
+  esac
 }
 
 install_native_msys2() {
   if command -v pacman >/dev/null 2>&1; then
-    # Safety net: pacman keyring init/populate. Newer MSYS2 installers do
-    # this automatically, but re-running is idempotent and cheap. If the
-    # keyring wasn't set up, `pacman -S` below would fail with GPG errors.
-    # Silent unless there's an actual problem.
-    # pacman-key --init >/dev/null 2>&1 || true
-    # pacman-key --populate msys2 >/dev/null 2>&1 || true
-
     echo "Installing MSYS2 base packages via pacman"
     pacman -S --needed --noconfirm \
       curl wget unzip jq ripgrep fzf openssh \
@@ -129,6 +173,10 @@ install_macos_native_tools() {
 }
 
 # ---- Main flow --------------------------------------------------------------
+
+# 0. Prereq: git must be available for the clone. On fresh Windows machines,
+#    find Git for Windows (or install it via winget).
+ensure_git_available
 
 # 1. Clone bare repo if missing.
 if [ ! -d "$CFG" ]; then
