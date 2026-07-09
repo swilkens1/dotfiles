@@ -216,7 +216,11 @@ esac
 if ! config checkout 2>/dev/null; then
   echo "Backing up pre-existing dotfiles to ~/.dotfiles-backup/"
   mkdir -p "$HOME/.dotfiles-backup"
-  config checkout 2>&1 \
+  # `config checkout` is EXPECTED to fail here — that's how we harvest
+  # the conflict list from git's error output. Without `|| true`,
+  # `pipefail` propagates that failure and `set -e` kills the script
+  # before the retry checkout below ever runs.
+  { config checkout 2>&1 || true; } \
     | grep -E "^\s+\." \
     | awk '{print $1}' \
     | while read -r f; do
