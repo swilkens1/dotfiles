@@ -51,10 +51,17 @@ link_dir_win() {
 
 install_native_msys2() {
   if command -v pacman >/dev/null 2>&1; then
+    # Safety net: pacman keyring init/populate. Newer MSYS2 installers do
+    # this automatically, but re-running is idempotent and cheap. If the
+    # keyring wasn't set up, `pacman -S` below would fail with GPG errors.
+    # Silent unless there's an actual problem.
+    # pacman-key --init >/dev/null 2>&1 || true
+    # pacman-key --populate msys2 >/dev/null 2>&1 || true
+
     echo "Installing MSYS2 base packages via pacman"
     pacman -S --needed --noconfirm \
       curl wget unzip jq ripgrep fzf openssh \
-      vim less tree which dos2unix
+      vim less tree which dos2unix tmux
     # Not installing 'git' — Git for Windows has GCM bundled and is
     # installed via winget below.
   fi
