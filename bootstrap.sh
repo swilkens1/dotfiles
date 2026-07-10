@@ -13,6 +13,24 @@
 #
 set -euo pipefail
 
+# Refuse to run from a pipe. Several child processes below (cmd.exe for
+# mklink, winget, vim) inherit our stdin and will consume the remainder
+# of the script as their own input, silently corrupting the run. See
+# BASH_SOURCE — it's a real path when we're invoked as a file, and
+# 'bash' / empty when we're being fed via `curl … | bash`.
+if [ ! -f "${BASH_SOURCE[0]:-/dev/null}" ]; then
+  cat >&2 <<'ERR'
+ERROR: bootstrap.sh is being run from a pipe (looks like `curl … | bash`).
+       Child processes inherit the pipe as stdin and eat the rest of
+       the script. Download to disk first, then run:
+
+         curl -fsSL https://raw.githubusercontent.com/swilkens1/dotfiles/master/bootstrap.sh \
+           -o ~/bootstrap.sh
+         bash ~/bootstrap.sh
+ERR
+  exit 1
+fi
+
 REPO="${DOTFILES_REPO:-https://github.com/swilkens1/dotfiles.git}"
 CFG="$HOME/.cfg"
 
@@ -212,23 +230,45 @@ case "$OSTYPE" in
     ;;
 esac
 
-# 3. Checkout; on collision, back up the offenders and retry.
-if ! config checkout 2>/dev/null; then
-  echo "Backing up pre-existing dotfiles to ~/.dotfiles-backup/"
-  mkdir -p "$HOME/.dotfiles-backup"
-  # `config checkout` is EXPECTED to fail here — that's how we harvest
-  # the conflict list from git's error output. Without `|| true`,
-  # `pipefail` propagates that failure and `set -e` kills the script
-  # before the retry checkout below ever runs.
-  { config checkout 2>&1 || true; } \
-    | grep -E "^\s+\." \
-    | awk '{print $1}' \
-    | while read -r f; do
-        mkdir -p "$HOME/.dotfiles-backup/$(dirname "$f")"
-        mv "$HOME/$f" "$HOME/.dotfiles-backup/$f"
-      done
-  config checkout
+# 3. Reconcile $HOME with what the repo will check out. Enumerate every
+#    tracked path; for each one already present in $HOME (possibly via a
+#    junction), decide:
+#      - identical to HEAD -> no-op (checkout --force overwrites in
+#                             place with the same bytes; harmless)
+#      - differs           -> cp -a into ~/.dotfiles-backup/, uniquifying
+#                             the target if a prior run already backed it up
+#      - missing           -> no-op (checkout will place it fresh)
+#    Then a single `config checkout --force`. $HOME isn't mutated until
+#    that final call, so a mid-loop failure leaves $HOME unchanged.
+#
+#    Guard: refuse --force if there are locally MODIFIED tracked files —
+#    --force would clobber them. --diff-filter=M restricts to modified
+#    entries only, so a fresh clone (where tracked files show up as
+#    "deleted from work tree") doesn't false-positive.
+if config diff --diff-filter=M --name-only HEAD 2>/dev/null | grep -q .; then
+  echo "ERROR: refusing --force checkout — you have uncommitted modifications:" >&2
+  config diff --diff-filter=M --name-only HEAD >&2
+  echo "       Commit, stash, or revert them, then re-run bootstrap." >&2
+  exit 1
 fi
+backup_dir="$HOME/.dotfiles-backup"
+conflicts=0
+while IFS= read -r f; do
+  [ -e "$HOME/$f" ] || continue
+  if config show "HEAD:$f" 2>/dev/null | cmp -s - "$HOME/$f"; then
+    continue
+  fi
+  if [ "$conflicts" -eq 0 ]; then
+    echo "Backing up pre-existing dotfiles to ~/.dotfiles-backup/"
+    mkdir -p "$backup_dir"
+  fi
+  conflicts=$((conflicts + 1))
+  target="$backup_dir/$f"
+  [ -e "$target" ] && target="$target.$(date +%s)"
+  mkdir -p "$(dirname "$target")"
+  cp -a "$HOME/$f" "$target"
+done < <(config ls-tree -r --name-only HEAD)
+config checkout --force
 
 # 4. Restore info/exclude (per-clone, not pushed). `*` denies by default;
 #    the explicit entries document files that must never be `config add -f`'d.
