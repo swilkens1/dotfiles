@@ -135,10 +135,27 @@ install_native_msys2() {
     echo "Installing MSYS2 base packages via pacman"
     pacman -S --needed --noconfirm \
       curl wget unzip jq ripgrep fzf openssh \
-      vim less tree which dos2unix tmux
+      vim less tree which dos2unix tmux diffutils
     # Not installing 'git' — Git for Windows has GCM bundled and is
     # installed via winget below.
   fi
+}
+
+# Install the MSYS2 packages the EARLY steps of the bootstrap depend on,
+# before the full `install_native_msys2` runs. Fresh UCRT64 installs are
+# extremely minimal — notably, `cmp` (diffutils) is missing, and the
+# reconciliation loop below relies on it to compare $HOME files against
+# HEAD. Anything the later `install_native_msys2` also installs is fine
+# to duplicate here; --needed makes pacman a no-op when up to date.
+preflight_msys2_pkgs() {
+  case "$OSTYPE" in
+    msys*|cygwin*) ;;
+    *) return 0 ;;
+  esac
+  command -v pacman >/dev/null 2>&1 || return 0
+  # cmp is needed by the reconciliation loop; add here anything else the
+  # steps before `install_native_msys2` require.
+  pacman -S --needed --noconfirm diffutils >/dev/null
 }
 
 install_windows_native_tools() {
@@ -204,9 +221,11 @@ install_macos_native_tools() {
 
 # ---- Main flow --------------------------------------------------------------
 
-# 0. Prereq: git must be available for the clone. On fresh Windows machines,
-#    find Git for Windows (or install it via winget).
+# 0. Prereqs: git for the clone (installed via winget on Windows if
+#    missing), and a minimal set of MSYS2 packages that the reconciliation
+#    loop below needs (notably `cmp`, which a stock UCRT64 install lacks).
 ensure_git_available
+preflight_msys2_pkgs
 
 # 1. Clone bare repo if missing.
 if [ ! -d "$CFG" ]; then
