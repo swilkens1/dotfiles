@@ -13,6 +13,16 @@
 #
 set -euo pipefail
 
+# Turn silent `set -e` deaths into loud, line-referenced diagnostics.
+# Without this trap, any command that exits nonzero — including
+# unintentional pipefail triggers, missing packages, or typo'd paths —
+# kills the shell without a hint. `$LINENO` in the trap resolves to the
+# line that actually failed, `$BASH_COMMAND` gives you the offending
+# command verbatim.
+# shellcheck disable=SC2154  # rc is assigned inline in the trap string
+trap 'rc=$?; printf "\nERROR: bootstrap failed (exit %d) at line %d: %s\n" \
+  "$rc" "$LINENO" "$BASH_COMMAND" >&2' ERR
+
 # Refuse to run from a pipe. Several child processes below (cmd.exe for
 # mklink, winget, vim) inherit our stdin and will consume the remainder
 # of the script as their own input, silently corrupting the run. See
@@ -131,13 +141,37 @@ ensure_git_available() {
 }
 
 install_native_msys2() {
-  if command -v pacman >/dev/null 2>&1; then
-    echo "Installing MSYS2 base packages via pacman"
-    pacman -S --needed --noconfirm \
-      curl wget unzip jq ripgrep fzf openssh \
-      vim less tree which dos2unix tmux diffutils
-    # Not installing 'git' — Git for Windows has GCM bundled and is
-    # installed via winget below.
+  command -v pacman >/dev/null 2>&1 || return 0
+  echo "Installing MSYS2 base packages via pacman"
+
+  # Packages in the plain `msys` repo — no subsystem prefix. We install
+  # one at a time so a single missing target doesn't abort the batch
+  # (pacman -S is transactional; --needed makes already-installed
+  # packages a no-op). `git` is intentionally excluded — Git for Windows
+  # (installed via winget below) is preferred for its bundled GCM.
+  local pkg fails=()
+  for pkg in curl wget unzip jq openssh vim less tree which dos2unix tmux diffutils; do
+    pacman -S --needed --noconfirm "$pkg" >/dev/null 2>&1 \
+      || fails+=("$pkg")
+  done
+
+  # Subsystem-prefixed packages (ripgrep, fzf) live in the mingw/ucrt/
+  # clang repos, not msys. $MINGW_PACKAGE_PREFIX is set by each MSYS2
+  # subsystem shell (e.g. "mingw-w64-ucrt-x86_64" under UCRT64). If it's
+  # unset (running under plain msys), skip these — they're comforts, not
+  # correctness-critical.
+  if [ -n "${MINGW_PACKAGE_PREFIX:-}" ]; then
+    for pkg in ripgrep fzf; do
+      pacman -S --needed --noconfirm "${MINGW_PACKAGE_PREFIX}-${pkg}" >/dev/null 2>&1 \
+        || fails+=("${MINGW_PACKAGE_PREFIX}-${pkg}")
+    done
+  else
+    echo "  (skipping ripgrep/fzf: no MINGW_PACKAGE_PREFIX set)"
+  fi
+
+  if [ "${#fails[@]}" -gt 0 ]; then
+    echo "  WARN: could not install: ${fails[*]}"
+    echo "        (missing from configured repos; check https://packages.msys2.org)"
   fi
 }
 
@@ -156,6 +190,42 @@ preflight_msys2_pkgs() {
   # cmp is needed by the reconciliation loop; add here anything else the
   # steps before `install_native_msys2` require.
   pacman -S --needed --noconfirm diffutils >/dev/null
+}
+
+# Verify every external command the script depends on is present and
+# every required env var is set. Runs AFTER preflight_msys2_pkgs so
+# freshly-installed packages count. Fails fast with a punch list rather
+# than mid-run at a random line.
+preflight_check() {
+  local missing_cmds=() missing_env=()
+  local cmd env_var
+
+  # Commands used before install_native_msys2 runs. cmp lives in
+  # diffutils (installed by preflight); the rest are coreutils/bash.
+  for cmd in git curl cp mv mkdir dirname cmp grep awk sed; do
+    command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+  done
+  case "$OSTYPE" in
+    msys*|cygwin*)
+      for cmd in cygpath powershell.exe; do
+        command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+      done
+      for env_var in USERPROFILE MINGW_PACKAGE_PREFIX; do
+        [ -n "${!env_var:-}" ] || missing_env+=("$env_var")
+      done
+      ;;
+  esac
+
+  if [ "${#missing_cmds[@]}" -gt 0 ] || [ "${#missing_env[@]}" -gt 0 ]; then
+    echo "ERROR: preflight failed. Missing prerequisites:" >&2
+    [ "${#missing_cmds[@]}" -gt 0 ] && echo "  commands: ${missing_cmds[*]}" >&2
+    [ "${#missing_env[@]}"  -gt 0 ] && echo "  env vars: ${missing_env[*]}" >&2
+    echo "" >&2
+    echo "  Install the missing commands (pacman -S <pkg> on MSYS2; see" >&2
+    echo "  https://packages.msys2.org to look up file→package), export" >&2
+    echo "  the missing env vars, and re-run." >&2
+    exit 1
+  fi
 }
 
 install_windows_native_tools() {
@@ -222,16 +292,28 @@ install_macos_native_tools() {
 # ---- Main flow --------------------------------------------------------------
 
 # 0. Prereqs: git for the clone (installed via winget on Windows if
-#    missing), and a minimal set of MSYS2 packages that the reconciliation
-#    loop below needs (notably `cmp`, which a stock UCRT64 install lacks).
+#    missing), a minimal set of MSYS2 packages the reconciliation loop
+#    below needs (notably `cmp`, which a stock UCRT64 install lacks),
+#    then a preflight validation that fails fast with a punch list of
+#    anything still missing before we touch the filesystem.
 ensure_git_available
 preflight_msys2_pkgs
+preflight_check
 
 # 1. Clone bare repo if missing.
 if [ ! -d "$CFG" ]; then
   echo "Cloning $REPO into $CFG"
   git clone --bare "$REPO" "$CFG"
 fi
+
+# 1b. Force LF line endings on checkout, regardless of global git config.
+#     Git for Windows defaults core.autocrlf=true, which rewrites every
+#     `\n` to `\r\n` on checkout — that breaks bash scripts, aws configs,
+#     ssh configs, everything Unix-side parsers touch. Setting these on
+#     the bare repo's local config keeps files byte-identical to HEAD
+#     across platforms and takes effect BEFORE the checkout below.
+config config --local core.autocrlf false
+config config --local core.eol lf
 
 # 2. Windows only: junction HOME sub-trees BEFORE checkout so tracked files
 #    land at USERPROFILE (where Windows-native tools look). No-op on other OSes.
@@ -312,17 +394,8 @@ config config --local status.showUntrackedFiles no
 #    immediately on a fresh machine.
 mkdir -p "$HOME/personal" "$HOME/work"
 
-# 7. (Optional, cosmetic) pre-install vim-plug + plugins so first `vim`
-#    doesn't pause ~10s while .vimrc auto-installs them.
-if command -v vim >/dev/null 2>&1; then
-  if [ ! -f "$HOME/.vim/autoload/plug.vim" ]; then
-    curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
-      https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-  fi
-  vim +PlugInstall +qall || true
-fi
-
-# 8. Per-OS native tool installs + mise installer.
+# 7. Per-OS native tool installs + mise installer. Runs BEFORE the
+#    vim-plug preinstall below so `vim` is available on a fresh box.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     install_native_msys2
@@ -368,6 +441,17 @@ case "$(uname -s)" in
     MISE_BIN=""
     ;;
 esac
+
+# 8. (Optional, cosmetic) pre-install vim-plug + plugins so first `vim`
+#    doesn't pause ~10s while .vimrc auto-installs them. Deferred until
+#    after step 7 so vim is actually installed on fresh boxes.
+if command -v vim >/dev/null 2>&1; then
+  if [ ! -f "$HOME/.vim/autoload/plug.vim" ]; then
+    curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
+      https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+  fi
+  vim +PlugInstall +qall </dev/null || true
+fi
 
 # 9. Hydrate mise-managed tools from ~/.config/mise/config.toml.
 if [ -n "$MISE_BIN" ] && [ -x "$MISE_BIN" ] && [ -f "$HOME/.config/mise/config.toml" ]; then
