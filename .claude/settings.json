@@ -22,6 +22,6 @@
       }
     ]
   },
-  "effortLevel": "max",
+  "effortLevel": "high",
   "model": "opus"
 }
