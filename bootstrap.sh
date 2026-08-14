@@ -113,6 +113,14 @@ link_dir_win() {
 
 # ---- Windows: scoop (CLI) + winget (GUI/system apps) -----------------------
 
+# Resolve scoop's root the way scoop itself does (lib/core.ps1): $SCOOP, else
+# %USERPROFILE%\scoop. NOT $HOME -- scoop is a native Windows tool and never
+# sees bash's relocated HOME.
+scoop_root() {
+  local root="${SCOOP:-${USERPROFILE:-$HOME}/scoop}"
+  cygpath -u "$root" 2>/dev/null || printf '%s' "$root"
+}
+
 ensure_scoop() {
   if command -v scoop >/dev/null 2>&1; then
     return 0
@@ -121,9 +129,11 @@ ensure_scoop() {
   run powershell.exe -NoProfile -Command \
     "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force; \
      iwr -useb get.scoop.sh | iex"
-  # 20-platform.sh puts ~/scoop/shims on PATH for future shells; add it
-  # to this script's PATH for the remaining install loop.
-  local shims="$HOME/scoop/shims"
+  # scoop's installer only edits the *persistent* Windows PATH, which this
+  # already-running process never sees. Add the shims dir to this script's
+  # PATH so the install loop below can actually invoke scoop.
+  local shims
+  shims="$(scoop_root)/shims"
   if [ -d "$shims" ]; then
     case ":$PATH:" in *":$shims:"*) ;; *) export PATH="$shims:$PATH" ;; esac
   fi
@@ -131,9 +141,14 @@ ensure_scoop() {
 
 install_windows_cli_tools() {
   ensure_scoop
-  local pkg
+  local apps pkg
+  apps="$(scoop_root)/apps"
   for pkg in tmux ripgrep fzf neovim jq bat fd delta; do
-    scoop list "$pkg" >/dev/null 2>&1 && continue
+    # NOT `scoop list "$pkg"`: it exits 0 whether or not the app is installed,
+    # so as a guard it silently skipped every package and this whole loop was
+    # a no-op. scoop prefix/info are equally useless (both always exit 0).
+    # The app directory is the reliable signal.
+    [ -d "$apps/$pkg" ] && continue
     echo "scoop install $pkg"
     run scoop install "$pkg" \
       || echo "  (failed -- run 'scoop install $pkg' by hand to see error)"
