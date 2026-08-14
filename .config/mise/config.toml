@@ -6,3 +6,7 @@ trivy = "latest"
 terraform-docs = "latest"
 shellcheck = "latest"
 kubectl = "latest"
+# Required by mise's own shell completion: `mise completion bash` emits only a
+# dispatcher that shells out to `usage` at completion time, so without this
+# every <TAB> on `mise` prints an error. See .bashrc.d/70-completions.sh
+usage = "latest"

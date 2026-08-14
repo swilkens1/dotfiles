@@ -22,6 +22,13 @@ REPO="${DOTFILES_REPO:-https://github.com/swilkens1/dotfiles.git}"
 # `mise self-update` handles upgrades on existing machines.
 MISE_VERSION="2026.6.11"
 
+# bash-completion library, vendored as a single pure-bash file. Pinned and
+# checksummed because it gets sourced into every interactive shell.
+# Re-pin with:
+#   curl -fsSL https://raw.githubusercontent.com/scop/bash-completion/<VER>/bash_completion | sha256sum
+BASH_COMPLETION_VERSION="2.16.0"
+BASH_COMPLETION_SHA256="f347b832c91d44358bb335e69fa7576241d67040795a1a4d8897317c739d35b1"
+
 # ---- Flags ------------------------------------------------------------------
 
 usage() {
@@ -160,6 +167,48 @@ MSG
       --accept-source-agreements --accept-package-agreements --silent \
       || echo "  (failed -- corporate AV quarantine? Install manually.)"
   done
+}
+
+# ---- bash-completion (all platforms) ---------------------------------------
+
+# Git Bash ships no bash-completion package at all (no /usr/share/bash-completion,
+# no /etc/bash_completion.d) -- only git's own completions. Homebrew has
+# bash-completion@2, but installs it to a prefix that differs across
+# Intel/Apple-Silicon/Linux. Vendoring the single file to one XDG path on every
+# OS gives ~/.bashrc.d/70-completions.sh exactly one place to look.
+#
+# Only the top-level `bash_completion` file is needed, not the upstream
+# completions/ tree: modern CLIs generate their own scripts (`kubectl
+# completion bash`), they just need this file's helper functions to exist.
+ensure_bash_completion() {
+  local dest="$HOME/.local/share/bash-completion/bash_completion"
+  if [ -f "$dest" ]; then
+    return 0
+  fi
+  echo "Installing bash-completion $BASH_COMPLETION_VERSION"
+  run mkdir -p "$(dirname "$dest")"
+  local url="https://raw.githubusercontent.com/scop/bash-completion/${BASH_COMPLETION_VERSION}/bash_completion"
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "DRY: curl $url -> $dest (verify sha256 $BASH_COMPLETION_SHA256)"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -t bash_completion.XXXXXX)"
+  if ! curl -fsSL -o "$tmp" "$url"; then
+    rm -f "$tmp"
+    echo "  (download failed -- shell completions will be degraded; re-run later)"
+    return 0
+  fi
+  local got
+  got="$(sha256sum "$tmp" | cut -d' ' -f1)"
+  if [ "$got" != "$BASH_COMPLETION_SHA256" ]; then
+    rm -f "$tmp"
+    echo "ERROR: bash-completion checksum mismatch -- refusing to install." >&2
+    echo "       expected $BASH_COMPLETION_SHA256" >&2
+    echo "       got      $got" >&2
+    return 1
+  fi
+  mv "$tmp" "$dest"
 }
 
 # ---- Linux + macOS: Homebrew (single tool matrix) --------------------------
@@ -327,13 +376,20 @@ case "$(uname -s)" in
     ;;
 esac
 
-# 8. Hydrate mise-managed tools from ~/.config/mise/config.toml.
+# 8. bash-completion library. Must land before the first new shell starts;
+#    ~/.bashrc.d/70-completions.sh degrades gracefully if it is missing, but
+#    Cobra-generated completions (kubectl, docker) silently fail at <TAB>
+#    without it.
+ensure_bash_completion
+
+# 9. Hydrate mise-managed tools from ~/.config/mise/config.toml. This is what
+#    installs `usage`, which mise's own completion dispatcher shells out to.
 if [ -n "$MISE_BIN" ] && [ -x "$MISE_BIN" ] && [ -f "$HOME/.config/mise/config.toml" ]; then
   echo "Installing mise-managed tools"
   run "$MISE_BIN" install
 fi
 
-# 9. Ensure ~/.claude/settings.local.json exists (machine-local escape
+# 10. Ensure ~/.claude/settings.local.json exists (machine-local escape
 #     hatch). Untracked via info/exclude; the tracked .claude files
 #     (settings.json, hooks/, ...) sync through the repo as normal.
 run mkdir -p "$HOME/.claude"

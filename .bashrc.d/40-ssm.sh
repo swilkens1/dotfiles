@@ -8,11 +8,11 @@ ssm() {
   local RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' NC='\033[0m'
 
   if [ -z "${AWS_PROFILE:-}" ]; then
-    echo -e "${YELLOW}Select AWS profile:${NC}"
     local p
-    select p in $(_aws_profiles); do
-      [ -n "$p" ] && aps "$p" && break
-    done
+    p=$(_aws_profiles | fzf --height=20% --reverse \
+          --header='AWS profile  (Esc cancels)') || return 1
+    [ -n "$p" ] || { echo -e "${YELLOW}Cancelled${NC}"; return 1; }
+    aps "$p" || return 1
   fi
   echo -e "${GREEN}Profile: ${AWS_PROFILE}${NC}"
 
@@ -21,35 +21,25 @@ ssm() {
     aws sso login || { echo -e "${RED}SSO login failed${NC}"; return 1; }
   fi
 
-  local filter="${1:-bas}"
-  local instances
-  instances=$(aws ec2 describe-instances \
+  # $1 seeds fzf's query rather than hard-filtering, so a typo just means an
+  # empty list you can backspace out of instead of "no instances found".
+  # --with-nth reorders the *display* to name-first; the returned line is
+  # still the full tab-separated record.
+  local sel
+  sel=$(aws ec2 describe-instances \
     --filters "Name=instance-state-name,Values=running" \
     --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`]|[0].Value,State.Name]' \
-    --output text | grep -i "$filter") || true
-  if [ -z "$instances" ]; then
-    echo -e "${RED}No running instances matching '$filter'${NC}"
+    --output text \
+    | fzf --query="${1:-bas}" --height=40% --reverse \
+          --with-nth=2,1,3 --header='Select instance  (Esc cancels)') || return 1
+
+  if [ -z "$sel" ]; then
+    echo -e "${RED}No instance selected${NC}"
     return 1
   fi
 
-  local -a ids names
-  local i=1 id name state
-  while IFS=$'\t' read -r id name state; do
-    ids[i]=$id
-    names[i]=$name
-    echo "$i) $name ($id) - $state"
-    ((i++))
-  done <<< "$instances"
-
-  echo -en "\n${YELLOW}Instance number: ${NC}"
-  local n
-  read -r n
-  if [[ ! "$n" =~ ^[0-9]+$ ]] || [ "$n" -lt 1 ] || [ "$n" -ge "$i" ]; then
-    echo -e "${RED}Invalid selection${NC}"
-    return 1
-  fi
-
-  local sid=${ids[$n]} sname=${names[$n]}
+  local sid sname
+  IFS=$'\t' read -r sid sname _ <<< "$sel"
   echo -en "\n${YELLOW}Auto-reconnect on disconnect? (y/N): ${NC}"
   local r
   read -r r

@@ -15,7 +15,22 @@ _path_add() {
 
 case "$OSTYPE" in
   msys*|cygwin*)
-    _path_add "$HOME/scoop/shims"
+    # Scoop installs under $SCOOP if set, else %USERPROFILE%\scoop -- which is
+    # NOT $HOME here, since HOME is relocated to C:\DevOpsHome. Resolve in
+    # Windows form, then cygpath to a POSIX path (same approach as 60-mise.sh).
+    # Global installs (scoop install -g) live under $SCOOP_GLOBAL or
+    # %ProgramData%\scoop and get their own shims dir.
+    _scoop_win="${SCOOP:-${USERPROFILE:-$HOME}/scoop}"
+    _scoop_shims=$(cygpath -u "$_scoop_win/shims" 2>/dev/null) ||
+      _scoop_shims="$_scoop_win/shims"
+    _path_add "$_scoop_shims"
+
+    _scoop_gwin="${SCOOP_GLOBAL:-${ProgramData:-${ALLUSERSPROFILE:-}}/scoop}"
+    _scoop_gshims=$(cygpath -u "$_scoop_gwin/shims" 2>/dev/null) ||
+      _scoop_gshims="$_scoop_gwin/shims"
+    _path_add "$_scoop_gshims"
+
+    unset _scoop_win _scoop_shims _scoop_gwin _scoop_gshims
     export PATH
 
     # Redirect Windows-native tool config to $HOME so a moved HOME
