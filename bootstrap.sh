@@ -384,6 +384,19 @@ ensure_bash_completion
 
 # 9. Hydrate mise-managed tools from ~/.config/mise/config.toml. This is what
 #    installs `usage`, which mise's own completion dispatcher shells out to.
+#
+#    On Windows mise resolves its global config from %USERPROFILE%, not $HOME,
+#    and otherwise only finds ours by walking up from $PWD -- so running
+#    bootstrap from anywhere outside $HOME would install an empty tool list.
+#    Export it explicitly; ~/.bashrc.d/60-mise.sh does the same for shells.
+case "$OSTYPE" in
+  msys*|cygwin*)
+    if [ -f "$HOME/.config/mise/config.toml" ]; then
+      MISE_GLOBAL_CONFIG_FILE=$(cygpath -w "$HOME/.config/mise/config.toml")
+      export MISE_GLOBAL_CONFIG_FILE
+    fi
+    ;;
+esac
 if [ -n "$MISE_BIN" ] && [ -x "$MISE_BIN" ] && [ -f "$HOME/.config/mise/config.toml" ]; then
   echo "Installing mise-managed tools"
   run "$MISE_BIN" install
