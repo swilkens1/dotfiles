@@ -18,6 +18,20 @@ esac
 if command -v mise >/dev/null 2>&1; then
   case "$OSTYPE" in
     msys*|cygwin*)
+      # mise is a native Windows binary, so it resolves its GLOBAL config from
+      # %USERPROFILE%\.config -- NOT bash's $HOME. With HOME relocated to
+      # C:\DevOpsHome that meant the tracked config was only ever found by
+      # mise walking up from $PWD, so every managed tool broke the moment you
+      # cd'd outside C:\DevOpsHome ("mise ERROR cannot find binary path"), and
+      # `mise use -g` wrote to the untracked %USERPROFILE% copy instead.
+      # Same native-tool escape hatch as DOCKER_CONFIG/KUBECONFIG in
+      # 20-platform.sh; needs the Windows path form.
+      if [ -f "$HOME/.config/mise/config.toml" ]; then
+        _mise_cfg=$(cygpath -w "$HOME/.config/mise/config.toml" 2>/dev/null) &&
+          export MISE_GLOBAL_CONFIG_FILE="$_mise_cfg"
+        unset _mise_cfg
+      fi
+
       # mise's data dir on Windows defaults to %LOCALAPPDATA%\mise (overridable
       # via MISE_DATA_DIR). Shims live in <data>/shims as one .exe per tool.
       # Hard-coding the path because `mise dirs` is broken in 2026.6.11.
