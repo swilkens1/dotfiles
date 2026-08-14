@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # mise — runtime/tool version manager. Reads ~/.config/mise/config.toml for
 # globals and the nearest .tool-versions / mise.toml when you cd into a repo.
 # Installed by bootstrap.sh into ~/.local/bin (mise.exe on Windows, mise on
