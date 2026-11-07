@@ -72,6 +72,10 @@ errs=$(startup_errors)
 check "login shell starts without errors" test -z "$errs"
 [ -z "$errs" ] || printf '     | %s\n' "$errs"
 
+# Ubuntu's stock ~/.profile also sources ~/.bashrc; modules must load once.
+loads=$(bash -lixc true 2>&1 | grep -c "^+* \. $HOME/\.bashrc\.d/10-prompt\.sh$")
+check "login shell loads modules once (got $loads)" test "$loads" -eq 1
+
 echo
 if [ "$failures" -eq 0 ]; then
   echo "All checks passed."

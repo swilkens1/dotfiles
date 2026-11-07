@@ -13,3 +13,7 @@ if [ -d "$HOME/.bashrc.d" ]; then
   done
   unset rc
 fi
+
+# Read by ~/.bash_profile. Not exported, so child shells still load .bashrc,
+# and a manual `. ~/.bashrc` still reloads everything.
+_DOTFILES_BASHRC_LOADED=1
