@@ -48,6 +48,22 @@ snapshot() {
     -o -type f -print0 | sort -z | xargs -0 sha256sum)
 }
 
+# ---- Dry run on a cold machine ----------------------------------------------
+
+# No Homebrew stub on PATH, so bootstrap takes its install branches; curl is
+# replaced by a recorder. A dry run must not download, create, or complain.
+mkdir -p /tmp/rec /tmp/dryhome
+printf '#!/bin/sh\necho "$*" >> /tmp/curl.calls\n' > /tmp/rec/curl
+chmod +x /tmp/rec/curl
+PATH=/tmp/rec:/usr/local/bin:/usr/bin:/bin \
+  bash /src/bootstrap.sh --dry-run --home=/tmp/dryhome >/tmp/dry.out 2>/tmp/dry.err
+check "dry run succeeds"              test $? -eq 0
+check "dry run calls no curl"         test ! -e /tmp/curl.calls
+check "dry run creates no files"      test -z "$(find /tmp/dryhome -mindepth 1)"
+check "dry run prints no errors"      test ! -s /tmp/dry.err
+check "dry run previews mise tools"   grep -q 'mise.* install' /tmp/dry.out
+[ ! -s /tmp/dry.err ] || sed 's/^/     | /' /tmp/dry.err
+
 # ---- First run on a fresh home ----------------------------------------------
 
 check "first run succeeds"            bootstrap --run

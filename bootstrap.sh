@@ -239,8 +239,11 @@ ensure_brew() {
     return 0
   fi
   echo "Installing Homebrew (this takes several minutes on first run)"
+  # Single-quoted so the download happens inside `run`, not while building
+  # its arguments -- otherwise --dry-run would still fetch the installer.
+  # shellcheck disable=SC2016
   run /bin/bash -c \
-    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
   local brew_bin
   for brew_bin in /home/linuxbrew/.linuxbrew/bin/brew \
                   /opt/homebrew/bin/brew \
@@ -315,30 +318,36 @@ esac
 #    --diff-filter=M restricts to modified entries only, so a fresh
 #    clone (tracked files show as "deleted from work tree") doesn't
 #    false-positive.
-if config diff --diff-filter=M --name-only HEAD 2>/dev/null | grep -q .; then
+#
+#    A cold dry run has no clone to inspect, so it only describes this step.
+if [ "$DRY_RUN" = 1 ] && [ ! -d "$CFG" ]; then
+  echo "DRY: back up differing pre-existing dotfiles to ~/.dotfiles-backup/"
+  echo "DRY: config checkout --force"
+elif config diff --diff-filter=M --name-only HEAD 2>/dev/null | grep -q .; then
   echo "ERROR: refusing --force checkout -- you have uncommitted modifications:" >&2
   config diff --diff-filter=M --name-only HEAD >&2
   echo "       Commit, stash, or revert them, then re-run bootstrap." >&2
   exit 1
+else
+  backup_dir="$HOME/.dotfiles-backup"
+  conflicts=0
+  while IFS= read -r f; do
+    [ -e "$HOME/$f" ] || continue
+    if config show "HEAD:$f" 2>/dev/null | cmp -s - "$HOME/$f"; then
+      continue
+    fi
+    if [ "$conflicts" -eq 0 ]; then
+      echo "Backing up pre-existing dotfiles to ~/.dotfiles-backup/"
+      run mkdir -p "$backup_dir"
+    fi
+    conflicts=$((conflicts + 1))
+    target="$backup_dir/$f"
+    [ -e "$target" ] && target="$target.$(date +%s)"
+    run mkdir -p "$(dirname "$target")"
+    run cp -a "$HOME/$f" "$target"
+  done < <(config ls-tree -r --name-only HEAD)
+  run config checkout --force
 fi
-backup_dir="$HOME/.dotfiles-backup"
-conflicts=0
-while IFS= read -r f; do
-  [ -e "$HOME/$f" ] || continue
-  if config show "HEAD:$f" 2>/dev/null | cmp -s - "$HOME/$f"; then
-    continue
-  fi
-  if [ "$conflicts" -eq 0 ]; then
-    echo "Backing up pre-existing dotfiles to ~/.dotfiles-backup/"
-    run mkdir -p "$backup_dir"
-  fi
-  conflicts=$((conflicts + 1))
-  target="$backup_dir/$f"
-  [ -e "$target" ] && target="$target.$(date +%s)"
-  run mkdir -p "$(dirname "$target")"
-  run cp -a "$HOME/$f" "$target"
-done < <(config ls-tree -r --name-only HEAD)
-run config checkout --force
 
 # 5. Restore info/exclude (per-clone, not pushed). `*` denies by default;
 #    the explicit entries document files that must never be `config add -f`'d.
@@ -376,7 +385,11 @@ case "$(uname -s)" in
     if [ ! -x "$MISE_BIN" ]; then
       echo "Installing mise $MISE_VERSION"
       run mkdir -p "$HOME/.local/bin"
-      tmp_zip="$(mktemp -t mise.XXXXXX.zip)"
+      if [ "$DRY_RUN" = 1 ]; then
+        tmp_zip="<tmp>/mise.zip"
+      else
+        tmp_zip="$(mktemp -t mise.XXXXXX.zip)"
+      fi
       run curl -fsSL -o "$tmp_zip" \
         "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-windows-x64.zip"
       run unzip -jo "$tmp_zip" 'mise/bin/mise.exe' 'mise/bin/mise-shim.exe' \
@@ -423,6 +436,9 @@ esac
 if [ -n "$MISE_BIN" ] && [ -x "$MISE_BIN" ] && [ -f "$HOME/.config/mise/config.toml" ]; then
   echo "Installing mise-managed tools"
   run "$MISE_BIN" install
+elif [ -n "$MISE_BIN" ] && [ "$DRY_RUN" = 1 ]; then
+  # Neither mise nor the checked-out config exists yet in a dry run.
+  echo "DRY: $MISE_BIN install   (tools from ~/.config/mise/config.toml)"
 fi
 
 # 10. Ensure ~/.claude/settings.local.json exists (machine-local escape
