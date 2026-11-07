@@ -34,7 +34,15 @@ src=$repo
 if command -v cygpath >/dev/null 2>&1; then
   src=$(cygpath -m "$repo")
 fi
+rc=0
 MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$src:/src:ro" \
   -e DOTFILES_BRANCH="$branch" \
-  dotfiles-test bash /src/tests/assert.sh
+  dotfiles-test bash /src/tests/assert.sh || rc=1
+
+echo
+echo "== As root (system trust store) =="
+MSYS_NO_PATHCONV=1 docker run --rm --user root \
+  -v "$src:/src:ro" \
+  dotfiles-test bash /src/tests/assert-root.sh || rc=1
+exit "$rc"

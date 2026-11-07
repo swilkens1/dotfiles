@@ -1,0 +1,7 @@
+# --with=terraform
+[tools]
+terraform = "latest"
+tflint = "latest"
+terraform-ls = "latest"
+trivy = "latest"
+terraform-docs = "latest"

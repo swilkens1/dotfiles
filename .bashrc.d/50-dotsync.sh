@@ -29,6 +29,12 @@ dotsync() {
   fi
 
   if config diff --quiet && config diff --cached --quiet; then
+    # A clean tree can still hold commits from an earlier failed push.
+    if [ "$(config rev-list --count '@{upstream}..HEAD' 2>/dev/null)" -gt 0 ] 2>/dev/null; then
+      echo "No new changes; pushing earlier commits not yet on origin..."
+      config push
+      return
+    fi
     echo "No changes detected in tracked dotfiles."
     return 0
   fi
@@ -39,10 +45,6 @@ dotsync() {
 
   config add -u
 
-  # `read` can only ever produce a single line, which is why the old prompt
-  # could not write a commit body. `commit -e -m` hands the message to the
-  # editor instead: -m seeds the buffer, -e forces the editor open even
-  # though -m was given.
   if [ -n "$msg" ]; then
     config commit -m "$msg" || { echo "Commit aborted; changes stay staged."; return 1; }
   else

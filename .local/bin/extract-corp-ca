@@ -1,6 +1,8 @@
 #!/bin/bash
 #
-# Extract a root CA cert from the Windows cert store to a PEM file.
+# Git Bash only: extract a root CA cert from the Windows cert store to a PEM
+# file, which ~/.bashrc.d/25-ca.sh hands to the AWS CLI. (On WSL use
+# sync-windows-ca, which installs every Windows root into the Linux store.)
 # Bash equivalent of the classic PowerShell "iterate Cert:\LocalMachine\Root
 # and Export-Certificate" recipe. Works on machines where PowerShell script
 # execution is blocked by policy — this uses certutil.exe (a Windows built-in)
@@ -13,7 +15,7 @@
 # it never silently picks the wrong cert even if the pattern matches many.
 #
 # Usage:
-#   ./extract-corp-ca.sh [OUT_PATH]
+#   extract-corp-ca [OUT_PATH]      (default: ~/.local/share/corp-ca.cer)
 #
 # Env vars (all optional):
 #   CORP_CA_PATTERN  Case-insensitive extended-regex filter on Subject line.
@@ -27,6 +29,16 @@
 # Requires: certutil.exe (Windows built-in), bash, cygpath. fzf optional.
 #
 set -euo pipefail
+
+# WSL can run certutil.exe through interop but has no cygpath, and has a
+# better route anyway.
+case "$OSTYPE" in
+  msys*|cygwin*) ;;
+  *)
+    echo "extract-corp-ca is for Git Bash. On WSL run: sudo sync-windows-ca" >&2
+    echo "(installed by bootstrap.sh --with=corp-ca); elsewhere: ca-add FILE" >&2
+    exit 1 ;;
+esac
 
 OUT="${1:-$HOME/.local/share/corp-ca.cer}"
 PATTERN="${CORP_CA_PATTERN:-}"
@@ -43,7 +55,7 @@ fi
 #   SHA1<TAB>Subject<TAB>Scope<TAB>NotAfter
 enumerate_certs() {
   local flag="$1" scope="$2"
-  certutil.exe -store $flag Root 2>/dev/null | tr -d '\r' | awk -v scope="$scope" '
+  certutil.exe -store ${flag:+"$flag"} Root 2>/dev/null | tr -d '\r' | awk -v scope="$scope" '
     function emit() {
       if (sha1 != "" && subject != "") {
         print sha1 "\t" subject "\t" scope "\t" not_after

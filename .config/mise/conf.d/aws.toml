@@ -1,0 +1,4 @@
+# --with=aws. On Git Bash winget installs the AWS CLI instead (MSI, with
+# aws_completer), so this is Linux-only.
+[tools]
+aws-cli = { version = "latest", os = ["linux"] }

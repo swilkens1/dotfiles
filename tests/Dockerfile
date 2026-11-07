@@ -7,16 +7,19 @@ FROM ubuntu:26.04
 # the directory is empty). Installed before apt so HTTPS mirrors work too.
 COPY ca/ /usr/local/share/ca-certificates/
 
-# openssh-client matches a stock Ubuntu/WSL install (the container image omits it).
+# openssh-client and bash-completion match a stock Ubuntu/WSL install (the
+# container image omits them).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
+ && apt-get install -y --no-install-recommends ca-certificates git openssh-client openssl bash-completion \
  && rm -rf /var/lib/apt/lists/*
 
-# Stand-in for Homebrew: reports every formula as installed, so the test
-# exercises deployment instead of a 10+ minute network install.
+# Recording stand-ins for sudo and curl: the tests check what bootstrap
+# would install (apt, dpkg, downloads) without root or network access.
 RUN mkdir -p /opt/stubs/bin \
- && printf '#!/bin/sh\nexit 0\n' > /opt/stubs/bin/brew \
- && chmod +x /opt/stubs/bin/brew
+ && for t in sudo curl; do \
+      printf '#!/bin/sh\necho "$*" >> /tmp/%s.calls\n' "$t" > "/opt/stubs/bin/$t"; \
+    done \
+ && chmod +x /opt/stubs/bin/*
 
 RUN useradd --create-home --shell /bin/bash tester
 USER tester

@@ -7,6 +7,17 @@
 ssm() {
   local RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' NC='\033[0m'
 
+  # Fail up front, not halfway through a session start.
+  local tool missing=()
+  for tool in aws fzf session-manager-plugin; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  done
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo -e "${RED}ssm needs: ${missing[*]}${NC}" >&2
+    echo "  bootstrap.sh --run --with=aws,cli installs them (the plugin needs sudo)." >&2
+    return 1
+  fi
+
   if [ -z "${AWS_PROFILE:-}" ]; then
     local p
     p=$(_aws_profiles | fzf --height=20% --reverse \
@@ -26,6 +37,8 @@ ssm() {
   # --with-nth reorders the *display* to name-first; the returned line is
   # still the full tab-separated record.
   local sel
+  # The backticks are JMESPath literals for --query, not command substitution.
+  # shellcheck disable=SC2016
   sel=$(aws ec2 describe-instances \
     --filters "Name=instance-state-name,Values=running" \
     --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`]|[0].Value,State.Name]' \

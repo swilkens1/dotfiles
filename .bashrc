@@ -2,7 +2,12 @@
 [[ "$-" != *i* ]] && return
 
 set -o vi
-export TERM=xterm-256color
+# Terminals that report plain "xterm" (Git Bash's mintty, some SSH clients)
+# do 256 colors. Anything else -- tmux-256color inside tmux, screen -- knows
+# its own TERM and must keep it.
+if [ "$TERM" = xterm ]; then
+  export TERM=xterm-256color
+fi
 
 # Source modular config in lexicographic order: 10-* before 20-*, etc.
 # Use multiples of 10 so new modules can slot in between (15-foo.sh)

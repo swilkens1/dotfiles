@@ -1,0 +1,3 @@
+# --with=containers (skopeo comes from apt on Linux)
+[tools]
+kubectl = "latest"

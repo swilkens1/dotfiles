@@ -1,29 +1,31 @@
 [user]
 	name = Steven Wilkens
-	email = stevencwilkens@gmail.com
+	useConfigOnly = true
 
 [core]
-    autocrlf = false
-    eol = lf
+	autocrlf = false
+	eol = lf
 	editor = vim
 
 [init]
 	defaultBranch = master
 
-[http]
-    sslVerify = true
+[includeIf "gitdir/i:~/personal/"]
+	path = ~/.gitconfig-personal
+[includeIf "gitdir/i:~/.cfg"]
+	path = ~/.gitconfig-personal
+[includeIf "gitdir/i:~/work/"]
+	path = ~/.gitconfig-work
 
-[includeIf "gitdir/i:~/personal/**/"]
-    path = ~/.gitconfig-personal
-
-[includeIf "gitdir/i:~/work/**/"]
-    path = ~/.gitconfig-work
-
-[credential]
-    useHttpPath = true
-    helper = manager
-
+# AWS CodeCommit over HTTPS: the AWS CLI signs requests with the active
+# profile. The empty helper clears any other helper for these URLs only.
 [credential "https://git-codecommit.*.amazonaws.com"]
-    helper = 
-    helper = !aws codecommit credential-helper $@
-    useHttpPath = true
+	helper =
+	helper = !aws codecommit credential-helper $@
+	useHttpPath = true
+
+# Per-machine settings (credential helper, CA paths, proxies), written by
+# bootstrap.sh and never tracked. Last so it can override anything above;
+# git ignores it if missing.
+[include]
+	path = ~/.gitconfig-local

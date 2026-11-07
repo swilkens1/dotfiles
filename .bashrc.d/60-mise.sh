@@ -1,10 +1,11 @@
 # shellcheck shell=bash
-# mise — runtime/tool version manager. Reads ~/.config/mise/config.toml for
-# globals and the nearest .tool-versions / mise.toml when you cd into a repo.
+# mise — runtime/tool version manager. Reads ~/.config/mise/config.toml and
+# conf.d/*.toml (one per bootstrap feature) for globals, and the nearest
+# .tool-versions / mise.toml when you cd into a repo.
 # Installed by bootstrap.sh into ~/.local/bin (mise.exe on Windows, mise on
 # Linux).
 #
-# Linux/macOS: `mise activate` injects current tool paths into PATH on each
+# Linux: `mise activate` injects current tool paths into PATH on each
 # prompt — preferred mode.
 # Windows (Git Bash): `mise activate bash` emits Windows-format PATH
 # (';'-separated, C:\ paths) that bash can't parse, so we fall back to shim
@@ -26,10 +27,11 @@ if command -v mise >/dev/null 2>&1; then
       # cd'd outside C:\DevOpsHome ("mise ERROR cannot find binary path"), and
       # `mise use -g` wrote to the untracked %USERPROFILE% copy instead.
       # Same native-tool escape hatch as DOCKER_CONFIG/KUBECONFIG in
-      # 20-platform.sh; needs the Windows path form.
-      if [ -f "$HOME/.config/mise/config.toml" ]; then
-        _mise_cfg=$(cygpath -w "$HOME/.config/mise/config.toml" 2>/dev/null) &&
-          export MISE_GLOBAL_CONFIG_FILE="$_mise_cfg"
+      # 20-platform.sh; needs the Windows path form. MISE_CONFIG_DIR, not
+      # MISE_GLOBAL_CONFIG_FILE: only the former also loads conf.d/*.toml.
+      if [ -d "$HOME/.config/mise" ]; then
+        _mise_cfg=$(cygpath -w "$HOME/.config/mise" 2>/dev/null) &&
+          export MISE_CONFIG_DIR="$_mise_cfg"
         unset _mise_cfg
       fi
 

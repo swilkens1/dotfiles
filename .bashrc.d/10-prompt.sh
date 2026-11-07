@@ -21,7 +21,7 @@ __prompt_git() {
 PROMPT_COMMAND=__prompt_git
 
 PS1='\[\e]0;\w\a\]\n\
-\[\e[32m\]swilkens@\h \
+\[\e[32m\]\u@\h \
 \[\e[35m\]\w\
 \[\e[36m\]${GIT_BRANCH}\
 \[\e[0m\]\n$ '

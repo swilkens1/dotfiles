@@ -1,16 +1,18 @@
 # shellcheck shell=bash
 # Programmable completion: the bash-completion library plus per-tool scripts.
 #
-# Git Bash ships no bash-completion package (no /usr/share/bash-completion,
-# no /etc/bash_completion.d) -- it bundles only git's own completions. The
-# library is a single pure-bash file with no build step, installed to
-# $XDG_DATA_HOME/bash-completion/bash_completion by hand.
+# Linux: the distro's bash-completion package (apt, --with=cli; stock on
+# Ubuntu). Git Bash ships no such package -- it bundles only git's own
+# completions -- so bootstrap.sh installs the library, a single pure-bash
+# file, to $XDG_DATA_HOME/bash-completion/bash_completion.
 #
 # Loads last (70-) so PATH is fully assembled by 20-platform.sh (scoop shims)
 # and 60-mise.sh (mise shims) before any `command -v` probe runs here.
 
-_bc="$XDG_DATA_HOME/bash-completion/bash_completion"
-if [ -r "$_bc" ]; then
+_bc=/usr/share/bash-completion/bash_completion
+[ -r "$_bc" ] || _bc="$XDG_DATA_HOME/bash-completion/bash_completion"
+# Skip if /etc/bash.bashrc (or anything else) already loaded it.
+if [ -r "$_bc" ] && ! declare -F _comp_initialize >/dev/null 2>&1; then
   # shellcheck disable=SC1090
   . "$_bc"
 

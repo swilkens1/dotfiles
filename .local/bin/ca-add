@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# ca-add: trust a CA certificate system-wide on Debian/Ubuntu, WSL included.
+# For CAs that don't arrive through sync-windows-ca: a plain Linux machine
+# behind a TLS-inspecting proxy, or an internal host signed by a CA that
+# isn't in the Windows store.
+
+set -euo pipefail
+
+dir=/usr/local/share/ca-certificates/local
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ca-add FILE [NAME]   trust the certificate in FILE (PEM or DER) as NAME
+                       (default: FILE's base name). Re-adding is a no-op.
+  ca-add --list        show the CAs added this way
+
+Getting the file: ask the host's owners, or see what a server presents with
+  openssl s_client -connect HOST:443 -showcerts </dev/null
+and save its last certificate -- then check its fingerprint against one from
+a trusted source before adding it. To remove one:
+  sudo rm /usr/local/share/ca-certificates/local/NAME.crt && sudo update-ca-certificates
+EOF
+}
+
+case "$OSTYPE" in
+  msys*|cygwin*)
+    echo "ca-add: Git Bash has no system trust store. For one host, point git at the CA:" >&2
+    echo "  git config --file ~/.gitconfig-local http.https://HOST/.sslCAInfo /path/to/ca.pem" >&2
+    exit 1 ;;
+esac
+
+case "${1:-}" in
+  ""|-h|--help) usage; exit 0 ;;
+  --list)
+    for f in "$dir"/*.crt; do
+      [ -e "$f" ] || { echo "(none)"; break; }
+      printf '%-24s %s\n' "$(basename "$f" .crt)" \
+        "$(openssl x509 -in "$f" -noout -subject -nameopt oneline | sed 's/^subject= *//')"
+    done
+    exit 0 ;;
+esac
+
+command -v update-ca-certificates >/dev/null 2>&1 ||
+  { echo "ca-add: update-ca-certificates not found (Debian/Ubuntu only)" >&2; exit 1; }
+
+file=$1
+[ -f "$file" ] || { echo "ca-add: no such file: $file" >&2; exit 1; }
+name=${2:-$(basename "${file%.*}")}
+name=${name//[^A-Za-z0-9._-]/_}
+
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+# update-ca-certificates only reads PEM with a .crt extension. Takes the first
+# certificate if FILE holds a chain.
+if ! openssl x509 -in "$file" -out "$tmp" 2>/dev/null &&
+   ! openssl x509 -inform DER -in "$file" -out "$tmp" 2>/dev/null; then
+  echo "ca-add: $file is not a PEM or DER certificate" >&2
+  exit 1
+fi
+
+openssl x509 -in "$tmp" -noout -subject -fingerprint -sha256 -nameopt oneline
+if ! openssl x509 -in "$tmp" -noout -ext basicConstraints 2>/dev/null | grep -q 'CA:TRUE'; then
+  echo "WARN: not a CA certificate; trusting it covers only that one server." >&2
+fi
+if ! openssl x509 -in "$tmp" -noout -checkend 0 >/dev/null; then
+  echo "WARN: this certificate has expired." >&2
+fi
+
+target="$dir/$name.crt"
+if cmp -s "$tmp" "$target"; then
+  echo "Already trusted as $name."
+  exit 0
+fi
+
+sudo=""
+[ "$(id -u)" -eq 0 ] || sudo=sudo
+$sudo install -D -m 644 "$tmp" "$target"
+# The rehash step reports every CA present twice (common once Windows roots
+# are synced); pass on only other warnings.
+$sudo update-ca-certificates 2>&1 >/dev/null |
+  grep -v -e 'skipping duplicate certificate' -e 'does not contain exactly one certificate' >&2 || true
+echo "Trusted as $name ($target)."
