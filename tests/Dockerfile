@@ -7,8 +7,9 @@ FROM ubuntu:26.04
 # the directory is empty). Installed before apt so HTTPS mirrors work too.
 COPY ca/ /usr/local/share/ca-certificates/
 
+# openssh-client matches a stock Ubuntu/WSL install (the container image omits it).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git \
+ && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Stand-in for Homebrew: reports every formula as installed, so the test

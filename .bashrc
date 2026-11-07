@@ -13,5 +13,3 @@ if [ -d "$HOME/.bashrc.d" ]; then
   done
   unset rc
 fi
-
-. "$HOME/.local/share/../bin/env"

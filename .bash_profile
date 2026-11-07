@@ -6,5 +6,3 @@ test -f ~/.bashrc && . ~/.bashrc
 if ! ps -ef | grep -v "grep" | grep -q "ssh-agent"; then
     eval $(ssh-agent -s)
 fi
-
-. "$HOME/.local/share/../bin/env"

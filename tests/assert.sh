@@ -60,6 +60,18 @@ before=$(snapshot)
 check "second run succeeds"           bootstrap --run
 check "second run changes nothing"    test "$before" = "$(snapshot)"
 
+# ---- Shell startup ----------------------------------------------------------
+
+# Errors from an interactive login shell, minus the job-control complaints any
+# interactive bash prints without a terminal.
+startup_errors() {
+  bash -lic true 2>&1 >/dev/null |
+    grep -v -e 'cannot set terminal process group' -e 'no job control in this shell'
+}
+errs=$(startup_errors)
+check "login shell starts without errors" test -z "$errs"
+[ -z "$errs" ] || printf '     | %s\n' "$errs"
+
 echo
 if [ "$failures" -eq 0 ]; then
   echo "All checks passed."
