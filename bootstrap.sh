@@ -326,26 +326,38 @@ case "$OSTYPE" in
     ;;
 esac
 
-# 4. Reconcile $HOME with what the repo will check out. Enumerate every
-#    tracked path; if it already exists in $HOME and differs from HEAD,
-#    back it up. Then a single `config checkout --force`. $HOME isn't
-#    mutated until that final call, so a mid-loop failure leaves $HOME
-#    unchanged.
+# 4. Put the repo's files in $HOME.
 #
-#    Guard: refuse --force if there are locally MODIFIED tracked files.
-#    --diff-filter=M restricts to modified entries only, so a fresh
-#    clone (tracked files show as "deleted from work tree") doesn't
-#    false-positive.
+#    First deploy (the clone has never been checked out, so no index):
+#    enumerate every tracked path; if it already exists in $HOME and
+#    differs from HEAD, back it up. Then a single `config checkout --force`.
+#    $HOME isn't mutated until that final call, so a mid-loop failure
+#    leaves $HOME unchanged.
+#
+#    Re-run: never overwrite local work. Modified or deleted tracked files
+#    are reported and left alone; a clean tree fast-forwards to origin.
 #
 #    A cold dry run has no clone to inspect, so it only describes this step.
 if [ "$DRY_RUN" = 1 ] && [ ! -d "$CFG" ]; then
   echo "DRY: back up differing pre-existing dotfiles to ~/.dotfiles-backup/"
   echo "DRY: config checkout --force"
-elif config diff --diff-filter=M --name-only HEAD 2>/dev/null | grep -q .; then
-  echo "ERROR: refusing --force checkout -- you have uncommitted modifications:" >&2
-  config diff --diff-filter=M --name-only HEAD >&2
-  echo "       Commit, stash, or revert them, then re-run bootstrap." >&2
-  exit 1
+elif [ -f "$CFG/index" ]; then
+  local_changes=$(config status --porcelain --untracked-files=no)
+  if [ -n "$local_changes" ]; then
+    echo "Leaving local changes to tracked dotfiles in place:"
+    printf '%s\n' "$local_changes" | sed 's/^/    /'
+    echo "  Commit them (dotsync) or revert them (config checkout -- <file>),"
+    echo "  then re-run bootstrap to pick up updates from origin."
+  elif config rev-parse --verify --quiet '@{upstream}' >/dev/null &&
+       [ "$(config rev-parse HEAD)" != "$(config rev-parse '@{upstream}')" ]; then
+    if config merge-base --is-ancestor HEAD '@{upstream}'; then
+      echo "Updating dotfiles from origin"
+      run config merge --ff-only --quiet '@{upstream}' ||
+        echo "WARN: update failed (an untracked file in the way?); see the error above."
+    else
+      echo "WARN: you have dotfile commits not on origin; run dotsync to reconcile."
+    fi
+  fi
 else
   backup_dir="$HOME/.dotfiles-backup"
   conflicts=0

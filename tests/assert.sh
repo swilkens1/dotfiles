@@ -84,6 +84,27 @@ config branch --quiet --unset-upstream
 check "re-run repairs an old clone"   bootstrap --run
 check "  ...push works again"         config push --quiet --dry-run
 
+# ---- Re-run with local changes ----------------------------------------------
+
+echo '# local edit' >> ~/.bashrc
+rm ~/.vimrc
+check "re-run with local changes succeeds" bootstrap --run
+check "  ...keeps the local edit"     grep -q '^# local edit$' ~/.bashrc
+check "  ...keeps the deletion"       test ! -e ~/.vimrc
+check "  ...names the changed files"  grep -q '\.vimrc' "$log"
+config checkout -- .bashrc .vimrc
+
+# ---- Re-run picks up new commits --------------------------------------------
+
+git clone --quiet /tmp/remote.git /tmp/upstream-work
+echo '" upstream change' >> /tmp/upstream-work/.vimrc
+git -C /tmp/upstream-work -c user.name=t -c user.email=t@example.com \
+  commit --quiet -am 'upstream change'
+git -C /tmp/upstream-work push --quiet
+check "re-run on a clean tree succeeds" bootstrap --run
+check "  ...fast-forwards to origin"  grep -q '^" upstream change$' ~/.vimrc
+check "  ...leaves the tree clean"    test -z "$(config status --porcelain)"
+
 # ---- Shell startup ----------------------------------------------------------
 
 # Errors from an interactive login shell, minus the job-control complaints any
