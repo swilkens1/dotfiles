@@ -17,6 +17,8 @@ trap 'rc=$?; printf "\nERROR: bootstrap failed (exit %d) at line %d: %s\n" \
   "$rc" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 REPO="${DOTFILES_REPO:-https://github.com/swilkens1/dotfiles.git}"
+# Empty means the remote's default branch. Set it to test a branch end to end.
+BRANCH="${DOTFILES_BRANCH:-}"
 
 # Bump when you want the bootstrap to pull a newer mise; after install,
 # `mise self-update` handles upgrades on existing machines.
@@ -41,6 +43,10 @@ Flags:
                   --home= for a hermetic sanity check.
   --home=PATH     Use PATH as HOME (sandboxed test mode).
   --help, -h      Show this and exit.
+
+Environment:
+  DOTFILES_REPO    Clone source (default: the GitHub repo; a local path works).
+  DOTFILES_BRANCH  Branch to deploy (default: the remote's default branch).
 
 Running without --run or --dry-run prints this help and exits, so an
 accidental invocation (double-click, curl|bash) is a no-op.
@@ -273,8 +279,10 @@ install_brew_tools() {
 
 # 1. Clone bare repo if missing.
 if [ ! -d "$CFG" ]; then
-  echo "Cloning $REPO into $CFG"
-  run git clone --bare "$REPO" "$CFG"
+  echo "Cloning $REPO${BRANCH:+ ($BRANCH)} into $CFG"
+  clone_args=(--bare)
+  [ -n "$BRANCH" ] && clone_args+=(--branch "$BRANCH")
+  run git clone "${clone_args[@]}" "$REPO" "$CFG"
 fi
 
 # 2. Force LF line endings on this clone regardless of global git config.
