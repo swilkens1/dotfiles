@@ -295,6 +295,24 @@ fi
 run config config --local core.autocrlf false
 run config config --local core.eol lf
 
+# 2b. A bare clone has no fetch refspec and no upstream, so `config pull`,
+#     `config push` and dotsync fail. Give it the layout a normal clone has.
+#     Also repairs clones made by older versions of this script.
+if [ -d "$CFG" ]; then
+  if [ -z "$(config config --get remote.origin.fetch)" ]; then
+    run config config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+  fi
+  run config fetch --quiet origin ||
+    echo "WARN: fetch from origin failed; continuing with the local clone."
+  cur_branch=$(config symbolic-ref --short HEAD)
+  if config rev-parse --verify --quiet "refs/remotes/origin/$cur_branch" >/dev/null &&
+     [ "$(config rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)" != "origin/$cur_branch" ]; then
+    run config branch --quiet --set-upstream-to="origin/$cur_branch"
+  fi
+else
+  echo "DRY: config: set fetch refspec, fetch origin, track origin's branch"
+fi
+
 # 3. Windows: junction the dirs whose consumers hardcode %USERPROFILE%
 #    and have no env-var override. Other dirs (.docker, .kube, .config,
 #    .local) are redirected via env vars in ~/.bashrc.d/20-platform.sh.

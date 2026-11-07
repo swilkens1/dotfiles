@@ -69,12 +69,20 @@ check "dry run previews mise tools"   grep -q 'mise.* install' /tmp/dry.out
 check "first run succeeds"            bootstrap --run
 check "tracked files deployed, clean" test -z "$(config status --porcelain)"
 check "skel .bashrc backed up"        cmp -s /etc/skel/.bashrc ~/.dotfiles-backup/.bashrc
+check "config pull works"             config pull --quiet --ff-only
+check "config push works (dry run)"   config push --quiet --dry-run
 
 # ---- Re-run is a no-op ------------------------------------------------------
 
 before=$(snapshot)
 check "second run succeeds"           bootstrap --run
 check "second run changes nothing"    test "$before" = "$(snapshot)"
+
+# Clones made by older bootstraps have no refspec and no upstream.
+config config --unset remote.origin.fetch
+config branch --quiet --unset-upstream
+check "re-run repairs an old clone"   bootstrap --run
+check "  ...push works again"         config push --quiet --dry-run
 
 # ---- Shell startup ----------------------------------------------------------
 
