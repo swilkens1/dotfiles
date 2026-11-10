@@ -37,10 +37,15 @@ unset _bc
 # the tool itself, which costs ~0.5-1s per tool on Windows -- far too slow to
 # run on every shell start. Cache is regenerated when the tool binary is newer
 # than the cached script, so a scoop/mise upgrade refreshes it automatically.
-_comp_cache="$XDG_CACHE_HOME/bash_completion.d"
-[ -d "$_comp_cache" ] || mkdir -p "$_comp_cache"
+#
+# Names here use a _dot_ prefix, never _comp_: bash-completion 2.12+ owns that
+# namespace. It has its own _comp_load (the on-demand loader behind every
+# <TAB>), and shadowing it breaks completion for any command without a
+# preloaded spec -- "possible retry loop", or `vi` writing to /vi.bash.
+_dot_comp_cache="$XDG_CACHE_HOME/bash_completion.d"
+[ -d "$_dot_comp_cache" ] || mkdir -p "$_dot_comp_cache"
 
-_comp_load() {
+_dot_comp_load() {
   local tool="$1"; shift
   local bin cache
   # `type -P` and not `command -v`: kubectl and docker are wrapper *functions*
@@ -48,7 +53,7 @@ _comp_load() {
   # path, and the -nt freshness check below would silently never fire.
   bin=$(type -P "$tool" 2>/dev/null) || return 0
   [ -n "$bin" ] || return 0
-  cache="$_comp_cache/$tool.bash"
+  cache="$_dot_comp_cache/$tool.bash"
   if [ ! -s "$cache" ] || [ "$bin" -nt "$cache" ]; then
     "$tool" "$@" >"$cache" 2>/dev/null || { rm -f "$cache"; return 0; }
   fi
@@ -56,16 +61,17 @@ _comp_load() {
   . "$cache" 2>/dev/null || return 0
 }
 
-_comp_load kubectl completion bash
-_comp_load docker completion bash
-_comp_load gh completion -s bash
-_comp_load helm completion bash
+_dot_comp_load kubectl completion bash
+_dot_comp_load docker completion bash
+_dot_comp_load gh completion -s bash
+_dot_comp_load helm completion bash
 
 # mise emits only a thin dispatcher that calls the separate `usage` CLI at
 # completion time; without it on PATH every <TAB> prints an error instead of
 # completing. Install with: mise use -g usage
 if command -v usage >/dev/null 2>&1; then
-  _comp_load mise completion bash
+  _dot_comp_load mise completion bash
 fi
 
-unset _comp_cache
+unset _dot_comp_cache
+unset -f _dot_comp_load
