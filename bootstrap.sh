@@ -683,6 +683,17 @@ if [ -d "$CFG" ]; then
     run config config --worktree core.sparseCheckout true
   [ "$(config config --get core.sparseCheckoutCone)" = false ] ||
     run config config --worktree core.sparseCheckoutCone false
+  # The curl'd ~/bootstrap.sh sits at a repo-only path. Git >= 2.37 stops
+  # skipping excluded paths that exist on disk, so a `chmod +x` or a newer
+  # download shows up as a local change -- and blocks the update in step 4.
+  # The setting keeps fresh clones skipping it; --skip-worktree repairs
+  # clones deployed before it existed.
+  [ "$(config config --get sparse.expectFilesOutsideOfPatterns)" = true ] ||
+    run config config --worktree sparse.expectFilesOutsideOfPatterns true
+  if [ -f "$CFG/index" ] && [ -e "$HOME/bootstrap.sh" ] &&
+     [ "$(config ls-files -t -- bootstrap.sh)" != "S bootstrap.sh" ]; then
+    run config update-index --skip-worktree -- bootstrap.sh
+  fi
   if [ "$(cat "$CFG/info/sparse-checkout" 2>/dev/null)" != "$sparse_patterns" ]; then
     if [ "$DRY_RUN" = 1 ]; then
       echo "DRY: write $CFG/info/sparse-checkout (features: ${features_list//$'\n'/ })"
